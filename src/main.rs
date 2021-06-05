@@ -1,11 +1,38 @@
 type Image = image::ImageBuffer<image::Rgba<u8>, Vec<u8>>;
+use image::GenericImageView;
 
 fn main() {
-    let mut turtler = Turtler::new(640, 480);
+    let loaded_img = image::open("test_pic.jpg").unwrap();
+    let (width, height) = loaded_img.dimensions();
 
-    for x in 0..256 {
-        turtler.draw_line(color(x as u8, x as u8, x as u8), x, 0, 10, 24);
+    let mut turtler = Turtler::new(width, height);
+
+    for x in 0..width {
+        let mut flapper = false;
+        for y in 0..height {
+            flapper = !flapper;
+            if flapper {
+                let color = loaded_img.get_pixel(x, y);
+
+                turtler.draw_line(color, x, y, 1, 1);
+            } else {
+                let color = color((x % 255) as u8, (y % 255) as u8, 200);
+                turtler.draw_line(color, x, y, 1, 1);
+            }
+        }
     }
+
+    // Compositor - this should enable creating 'fractally' images
+    /*
+    * Load image
+    * * Sample N pixels in a line, or turtle
+    * * Then avg those pixels
+    * * Take avg pixels and map to palette
+    * * Write to image
+    * Save image
+    * Finally, display that on canvas using projector and paint it
+
+    */
 
     turtler.save("test.png");
 }
@@ -19,7 +46,7 @@ pub enum Direction {
 }
 
 struct Turtler {
-    image: Image,
+    output_buffer: Image,
     width: u32,
     height: u32,
 }
@@ -28,7 +55,7 @@ impl Turtler {
     pub fn new(width: u32, height: u32) -> Self {
         Self {
             height,
-            image: Image::new(width, height),
+            output_buffer: Image::new(width, height),
             width,
         }
     }
@@ -38,7 +65,7 @@ impl Turtler {
         let mut y = y0;
         for l in 0..len {
             for _ in 0..slope {
-                *self.image.get_pixel_mut(x, y) = color;
+                *self.output_buffer.get_pixel_mut(x, y) = color;
 
                 y = self.increment_y(y);
             }
@@ -68,7 +95,7 @@ impl Turtler {
     }
 
     pub fn save(&self, file: &str) {
-        self.image.save(file).unwrap();
+        self.output_buffer.save(file).unwrap();
     }
 }
 
