@@ -1,4 +1,6 @@
 type Image = image::ImageBuffer<image::Rgba<u8>, Vec<u8>>;
+use core::num;
+
 use image::GenericImageView;
 
 fn main() {
@@ -7,17 +9,117 @@ fn main() {
 
     let mut turtler = Turtler::new(width, height);
 
-    for x in 0..width {
-        let mut flapper = false;
-        for y in 0..height {
-            flapper = !flapper;
-            if flapper {
-                let color = loaded_img.get_pixel(x, y);
+    let line_w = 10;
+    let line_h = 20;
 
-                turtler.draw_line(color, x, y, 1, 1);
+    let x_cutoff = 4;
+    let y_cutoff = 2;
+
+    // Must always be above 0 due to division
+    let steps = 5;
+
+    // Layer 0
+    for x in 0..width {
+        for y in 0..height {
+            turtler.draw_pixel(color(0, 0, 0), x, y);
+        }
+    }
+
+    // Layer 1
+    for x in 0..width {
+        if x % line_w == 0 {
+            for y in 0..height {
+                if y % line_h == 0 {
+                    let mut count = 0;
+                    let mut avg_r = 0;
+                    let mut avg_g = 0;
+                    let mut avg_b = 0;
+
+                    // Calculate avg
+
+                    let x_range = x..x + line_w;
+                    let y_range = y..y + line_h;
+
+                    for x in x_range.clone() {
+                        for y in y_range.clone() {
+                            let x = x % turtler.width;
+                            let y = y % turtler.height;
+
+                            let [r, g, b, a] = loaded_img.get_pixel(x, y).0;
+                            avg_r += r as u32;
+                            avg_g += g as u32;
+                            avg_b += b as u32;
+                            count += 1;
+                        }
+                    }
+
+                    // Get average
+                    let avg_color = color(
+                        (avg_r / count) as u8,
+                        (avg_g / count) as u8,
+                        (avg_b / count) as u8,
+                    );
+
+                    for x in x_range.clone() {
+                        for y in y_range.clone() {
+                            if x % line_w < x_cutoff || y % line_h < y_cutoff {
+                                continue;
+                            }
+
+                            turtler.draw_pixel(avg_color, x, y);
+                        }
+                    }
+                }
+            }
+        }
+        // Do some really wack stuff now
+        for x in 0..width {
+            for y in 0..height {
+                let [r, g, b, a] = turtler.output_buffer.get_pixel(x, y).0;
+                let step_conversion = steps * (u8::MAX / steps.max(1));
+                let converted_r = u8::MAX - b;
+                let converted_g = u8::MAX - r;
+                let converted_b = u8::MAX - b;
+
+                if r > 0 {
+                    turtler.draw_pixel(color(converted_r, converted_g, converted_b), x, y);
+                }
+            }
+        }
+
+        // Do some other stuff
+        for x in 0..width {
+            if x % 2 != 0 {
+                for y in 0..height {
+                    if y % 2 != 0 {
+                        let [r, g, b, a] = loaded_img.get_pixel(x, y).0;
+                        let converted_r = u8::MAX - b;
+                        let converted_g = u8::MAX - r;
+                        let converted_b = u8::MAX - b;
+
+                        if r > 0 {
+                            turtler.draw_pixel(color(converted_r, converted_g, converted_b), x, y);
+                        }
+                    }
+                }
             } else {
-                let color = color((x % 255) as u8, (y % 255) as u8, 200);
-                turtler.draw_line(color, x, y, 1, 1);
+                for y in 0..height {
+                    if y % 3 == 0 && y % 2 != 0 {
+                        let [r, g, b, a] = loaded_img.get_pixel(x, y).0;
+                        let converted_r = u8::MAX - b;
+                        let converted_g = u8::MAX - r;
+                        let converted_b = u8::MAX - b;
+                        turtler.draw_pixel(color(converted_r, converted_g, converted_b), x, y);
+                    }
+                }
+            }
+
+            for y in 0..height {
+                let [r, g, b, a] = turtler.output_buffer.get_pixel(x, y).0;
+
+                if r == 0 && (g == 0 || b == 0) {
+                    turtler.draw_pixel(color(255 / 3, 255 / 3, 255), x, y);
+                }
             }
         }
     }
@@ -58,6 +160,10 @@ impl Turtler {
             output_buffer: Image::new(width, height),
             width,
         }
+    }
+
+    pub fn draw_pixel(&mut self, color: Color, x: u32, y: u32) {
+        *self.output_buffer.get_pixel_mut(x, y) = color;
     }
 
     pub fn draw_line(&mut self, color: Color, x0: u32, y0: u32, slope: u32, len: u32) {
