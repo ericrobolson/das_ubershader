@@ -9,3 +9,4 @@ edition = "2018"
 [dependencies]
 game_utils = {git="https://github.com/ericrobolson/GameUtils", branch="main"}
 image = "0.23.14"
+rayon = "1.5.1"
