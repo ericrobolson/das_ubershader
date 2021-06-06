@@ -1,4 +1,5 @@
 mod pixel_machine;
+
 use image::imageops::FilterType;
 use pixel_machine::*;
 use rayon::prelude::*;
