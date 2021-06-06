@@ -22,6 +22,7 @@ impl Data {
 /// The various types used in the PixelMachine.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
+    Any,
     Bool,
     Color,
     String,

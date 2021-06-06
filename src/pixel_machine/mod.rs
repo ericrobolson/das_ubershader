@@ -25,6 +25,8 @@ pub enum Error {
 pub struct PixelMachine {
     stack: Stack<Data>,
     textures: Vec<Texture>,
+    width: u32,
+    height: u32,
     x: u32,
     y: u32,
 }
@@ -36,11 +38,18 @@ impl PixelMachine {
                 self.push(data)?;
                 Ok(())
             }
+            Op::Dup => {
+                let data = self.pop()?;
+                self.push(data.clone())?;
+                self.push(data)?;
+                Ok(())
+            }
             Op::FragPos => {
                 self.push(Data::U32(self.x))?;
                 self.push(Data::U32(self.y))?;
                 Ok(())
             }
+            // TODO: test
             Op::TexturePixel => {
                 // TODO: wire up required types in the event of an error.
                 let texture_id = self.pop_u32()?;
@@ -49,6 +58,14 @@ impl PixelMachine {
 
                 let color = self.get_color(texture_id, x, y);
                 self.push(Data::Color(color))?;
+                Ok(())
+            }
+            Op::Rot => {
+                // TODO: wire up required types in the event of an error.
+                let a = self.pop()?;
+                let b = self.pop()?;
+                self.push(a)?;
+                self.push(b)?;
                 Ok(())
             }
         }
@@ -67,6 +84,9 @@ impl PixelMachine {
 
         let texture_id = texture_id as usize;
         let texture = texture_id % self.textures.len();
+
+        let x = x % self.width;
+        let y = y % self.height;
 
         let [r, g, b, a] = self.textures[texture].get_pixel(x, y).0;
 
@@ -111,11 +131,13 @@ impl PixelMachine {
     }
 
     /// Creates a new pixel machine.
-    pub fn new(x: u32, y: u32, textures: Vec<Texture>) -> Self {
+    pub fn new(x: u32, y: u32, width: u32, height: u32, textures: Vec<Texture>) -> Self {
         let stack = Stack::new();
         Self {
             stack,
             textures,
+            width,
+            height,
             x,
             y,
         }
@@ -124,7 +146,9 @@ impl PixelMachine {
     /// Attempts to parse the given token.
     pub fn parse(&self, token: &str) -> Result<Op, Error> {
         match token {
+            "dup" => Ok(Op::Dup),
             "fragPos" => Ok(Op::FragPos),
+            "rot" => Ok(Op::Rot),
             "texturePixel" => Ok(Op::TexturePixel),
             _ => {
                 if let Ok(u) = token.parse::<u32>() {
@@ -170,6 +194,16 @@ impl PixelMachine {
         }
     }
 
+    /// Pops a string off the stack.
+    fn pop_string(&mut self) -> Result<String, Error> {
+        // TODO: wire up required types in the event of an error.
+
+        match self.pop()? {
+            Data::String(value) => Ok(value),
+            data => Err(Error::InvalidType { got: data }),
+        }
+    }
+
     /// Pops a u32 off the stack
     fn pop_u32(&mut self) -> Result<u32, Error> {
         // TODO: wire up required types in the event of an error.
@@ -195,10 +229,78 @@ mod tests {
 
     fn machine() -> PixelMachine {
         PixelMachine::new(
-            640,
-            480,
+            320,
+            240,
+            W,
+            H,
             vec![std::sync::Arc::new(image::DynamicImage::new_rgba8(W, H))],
         )
+    }
+
+    mod execute {
+        use super::*;
+
+        #[test]
+        fn data() {
+            let mut m = machine();
+            m.push(Data::Bool(true)).unwrap();
+            m.push(Data::U32(1)).unwrap();
+            m.push(Data::String("testy".into())).unwrap();
+
+            assert_eq!("testy".to_string(), m.pop_string().unwrap());
+            assert_eq!(1, m.pop_u32().unwrap());
+            assert_eq!(true, m.pop_bool().unwrap());
+        }
+
+        #[test]
+        fn dup_no_stack_returns_err() {
+            assert_eq!(Err(Error::StackUnderflow), machine().execute(Op::Dup));
+        }
+
+        #[test]
+        fn dup_duplicates_top() {
+            let mut m = machine();
+            m.push(Data::Bool(true)).unwrap();
+            m.execute(Op::Dup).unwrap();
+
+            assert_eq!(true, m.pop_bool().unwrap());
+            assert_eq!(true, m.pop_bool().unwrap());
+        }
+
+        #[test]
+        fn frag_pos() {
+            let mut m = machine();
+            m.execute(Op::FragPos).unwrap();
+            let expected_x = m.x;
+            let expected_y = m.y;
+            assert_eq!(expected_y, m.pop_u32().unwrap());
+            assert_eq!(expected_x, m.pop_u32().unwrap());
+        }
+
+        #[test]
+        fn rot_0_element_underflows() {
+            let mut m = machine();
+
+            assert_eq!(Err(Error::StackUnderflow), m.execute(Op::Rot));
+        }
+
+        #[test]
+        fn rot_1_element_underflows() {
+            let mut m = machine();
+            m.push(Data::Bool(true)).unwrap();
+
+            assert_eq!(Err(Error::StackUnderflow), m.execute(Op::Rot));
+        }
+
+        #[test]
+        fn rot() {
+            let mut m = machine();
+            m.push(Data::Bool(true)).unwrap();
+            m.push(Data::Bool(false)).unwrap();
+            m.execute(Op::Rot).unwrap();
+            assert_eq!(true, m.pop_bool().unwrap());
+            assert_eq!(false, m.pop_bool().unwrap());
+        }
     }
 
     mod parse {
@@ -217,6 +319,12 @@ mod tests {
         }
 
         #[test]
+        fn dup() {
+            let token = "dup";
+            assert_eq!(Ok(Op::Dup), machine().parse(token));
+        }
+
+        #[test]
         fn frag_pos() {
             let token = "fragPos";
             assert_eq!(Ok(Op::FragPos), machine().parse(token));
@@ -231,6 +339,12 @@ mod tests {
                 }),
                 machine().parse(token)
             );
+        }
+
+        #[test]
+        fn rot() {
+            let token = "rot";
+            assert_eq!(Ok(Op::Rot), machine().parse(token));
         }
 
         #[test]
@@ -329,6 +443,32 @@ mod tests {
             );
         }
 
+        // String
+        #[test]
+        fn pop_string() {
+            let mut m = machine();
+            m.push(Data::String("abc123".to_string())).unwrap();
+            assert_eq!(Ok("abc123".to_string()), m.pop_string());
+        }
+
+        #[test]
+        fn pop_string_underflow() {
+            let mut m = machine();
+            assert_eq!(Err(Error::StackUnderflow), m.pop_string());
+        }
+
+        #[test]
+        fn pop_string_wrong_type() {
+            let mut m = machine();
+            m.push(Data::Bool(true)).unwrap();
+
+            assert_eq!(
+                Err(Error::InvalidType {
+                    got: Data::Bool(true)
+                }),
+                m.pop_string()
+            );
+        }
         // U32
         #[test]
         fn pop_u32() {

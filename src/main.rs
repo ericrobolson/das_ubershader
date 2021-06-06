@@ -114,7 +114,7 @@ fn main() -> Result<(), Error> {
     let new_pixels: Vec<(u32, u32, Color)> = pixels
         .par_iter()
         .map(|(x, y)| {
-            let color = PixelMachine::new(*x, *y, textures.clone())
+            let color = PixelMachine::new(*x, *y, width, height, textures.clone())
                 .interpret(&program)
                 .unwrap();
 
