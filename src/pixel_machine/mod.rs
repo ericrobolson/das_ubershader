@@ -35,6 +35,31 @@ impl PixelMachine {
 
     ///
     pub fn interpret(&mut self, program: &str) -> Result<Color, Error> {
+        // Replace all comments
+        let program = {
+            const COMMENT_END: &'static str = "\n";
+            const COMMENT_START: &'static str = "#";
+
+            let mut s = program.to_string().replace("\r\n", "\n");
+
+            let mut i = 0;
+            let mut removing_comment = false;
+            while i < s.len() + 1 {
+                if s.get(i..i + 1).unwrap_or_default() == COMMENT_START {
+                    removing_comment = true;
+                } else if s.get(i..i + 1).unwrap_or_default() == COMMENT_END {
+                    removing_comment = false;
+                }
+
+                if removing_comment {
+                    s.remove(i);
+                } else {
+                    i += 1;
+                }
+            }
+            s
+        };
+
         // Interpret the program
         for token in program.split_whitespace() {
             let op = self.parse(token)?;
@@ -127,4 +152,9 @@ impl PixelMachine {
             data => Err(Error::InvalidType { got: data }),
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
 }

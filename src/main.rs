@@ -1,40 +1,97 @@
 mod pixel_machine;
+use image::imageops::FilterType;
 use pixel_machine::*;
 use rayon::prelude::*;
 use std::sync::Arc;
 
 type Texture = Arc<image::DynamicImage>;
 
+#[derive(serde::Deserialize)]
+pub struct Cfg {
+    pub width: u32,
+    pub height: u32,
+    pub inputs: Vec<String>,
+    pub output: String,
+    pub program: String,
+}
+
 fn main() -> Result<(), Error> {
-    // TODO: Make these things configuration
-    let width = 128;
-    let height = 128;
-
-    let output_name = "output.png";
-    let program = "
-    fragPos 1 texturePixel          
-    fragPos 3 texturePixel  
-    ";
-    let textures = vec!["test.jpg", "test1.png"];
-
-    // END TODO
     let start = std::time::Instant::now();
+
+    // Load config
+    let (directory, cfg) = {
+        let mut file_path = None;
+        for (idx, arg) in std::env::args().enumerate() {
+            if idx == 1 {
+                file_path = Some(arg);
+            }
+        }
+
+        match file_path {
+            Some(file_path) => {
+                println!("Loading cfg from {}", file_path);
+                let path = std::path::Path::new(&file_path);
+                let working_dir = std::env::current_dir().unwrap().to_path_buf();
+                let mut p = working_dir.clone();
+                p.push(path);
+                let path = p;
+                let contents = std::fs::read_to_string(&path).unwrap();
+                let cfg: Cfg = serde_json::from_str(&contents).unwrap();
+
+                let directory = {
+                    let mut directory = working_dir.clone();
+                    match &path.parent() {
+                        Some(parent) => {
+                            directory.push(parent);
+                        }
+                        None => {}
+                    }
+                    directory
+                };
+
+                (directory, cfg)
+            }
+            None => panic!("Required config JSON file!"),
+        }
+    };
+
+    // Set working values
+    let width = cfg.width;
+    let height = cfg.height;
+
+    let output_file = {
+        let mut file = directory.clone();
+        file.push(cfg.output);
+        file.to_str().unwrap().to_string()
+    };
+    let program = {
+        let mut file = directory.clone();
+        file.push(cfg.program);
+
+        std::fs::read_to_string(file).unwrap()
+    };
+
+    // Load all textures
+    let textures = {
+        let mut textures = vec![];
+        for tex in cfg.inputs.iter() {
+            let mut file = directory.clone();
+            file.push(tex);
+            textures.push(file.to_str().unwrap().to_string());
+        }
+        textures
+    };
 
     let textures: Vec<Texture> = {
         let mut t = vec![];
         textures
             .par_iter()
             .map(|texture| {
-                let mut loaded_img = image::open(texture).unwrap();
-
-                let crop_x = 0;
-                let crop_y = 0;
-
-                // TODO: deal with smaller images than boundary
-                // TODO: crop from center of img?
-                // TODO: scale image?
-                loaded_img.crop(crop_x, crop_y, width, height);
-
+                let loaded_img = image::open(texture).unwrap().resize_to_fill(
+                    width,
+                    height,
+                    FilterType::Nearest,
+                );
                 Arc::new(loaded_img)
             })
             .collect_into_vec(&mut t);
@@ -57,7 +114,7 @@ fn main() -> Result<(), Error> {
         .par_iter()
         .map(|(x, y)| {
             let color = PixelMachine::new(*x, *y, textures.clone())
-                .interpret(program)
+                .interpret(&program)
                 .unwrap();
 
             (*x, *y, color)
@@ -73,7 +130,7 @@ fn main() -> Result<(), Error> {
     }
 
     // Save and return
-    new_image.save(output_name).unwrap();
+    new_image.save(output_file).unwrap();
 
     println!("DURATION: {:?}", std::time::Instant::now() - start);
     Ok(())
