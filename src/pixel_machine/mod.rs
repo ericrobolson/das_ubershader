@@ -1,6 +1,8 @@
 mod data;
 mod op;
 
+use std::u8;
+
 pub use data::*;
 pub use op::*;
 
@@ -38,6 +40,10 @@ impl PixelMachine {
                 self.push(data)?;
                 Ok(())
             }
+            Op::Drop => {
+                self.pop()?;
+                Ok(())
+            }
             Op::Dup => {
                 let data = self.pop()?;
                 self.push(data.clone())?;
@@ -49,23 +55,65 @@ impl PixelMachine {
                 self.push(Data::U32(self.y))?;
                 Ok(())
             }
+            Op::MakeColor => {
+                let a = self.pop_u8()?;
+                let b = self.pop_u8()?;
+                let g = self.pop_u8()?;
+                let r = self.pop_u8()?;
+
+                let color: Color = (r, g, b, a).into();
+                self.push(Data::Color(color))?;
+                Ok(())
+            }
+            Op::Rot => {
+                let a = self.pop()?;
+                let b = self.pop()?;
+                self.push(a)?;
+                self.push(b)?;
+                Ok(())
+            }
+            Op::RotN => {
+                let n = self.pop_u32()?;
+
+                if n == 0 {
+                    return Ok(());
+                }
+
+                let mut working_stack = Stack::new();
+
+                let a = self.pop()?;
+
+                for _ in 0..n - 1 {
+                    working_stack.push(self.pop()?);
+                }
+
+                let b = self.pop()?;
+
+                self.push(a)?;
+                while let Some(value) = working_stack.pop() {
+                    self.push(value)?;
+                }
+
+                self.push(b)?;
+                Ok(())
+            }
+            Op::SplitColor => {
+                let color = self.pop_color()?;
+                self.push(Data::U8(color.r))?;
+                self.push(Data::U8(color.g))?;
+                self.push(Data::U8(color.b))?;
+                self.push(Data::U8(color.a))?;
+
+                Ok(())
+            }
             // TODO: test
             Op::TexturePixel => {
-                // TODO: wire up required types in the event of an error.
                 let texture_id = self.pop_u32()?;
                 let y = self.pop_u32()?;
                 let x = self.pop_u32()?;
 
                 let color = self.get_color(texture_id, x, y);
                 self.push(Data::Color(color))?;
-                Ok(())
-            }
-            Op::Rot => {
-                // TODO: wire up required types in the event of an error.
-                let a = self.pop()?;
-                let b = self.pop()?;
-                self.push(a)?;
-                self.push(b)?;
                 Ok(())
             }
         }
@@ -146,12 +194,18 @@ impl PixelMachine {
     /// Attempts to parse the given token.
     pub fn parse(&self, token: &str) -> Result<Op, Error> {
         match token {
+            "drop" => Ok(Op::Drop),
             "dup" => Ok(Op::Dup),
             "fragPos" => Ok(Op::FragPos),
+            "makeColor" => Ok(Op::MakeColor),
             "rot" => Ok(Op::Rot),
+            "rotN" => Ok(Op::RotN),
+            "splitColor" => Ok(Op::SplitColor),
             "texturePixel" => Ok(Op::TexturePixel),
             _ => {
-                if let Ok(u) = token.parse::<u32>() {
+                if let Ok(u) = token.parse::<u8>() {
+                    Ok(Op::Data(Data::U8(u)))
+                } else if let Ok(u) = token.parse::<u32>() {
                     Ok(Op::Data(Data::U32(u)))
                 } else if let Ok(b) = token.parse::<bool>() {
                     Ok(Op::Data(Data::Bool(b)))
@@ -209,7 +263,25 @@ impl PixelMachine {
         // TODO: wire up required types in the event of an error.
 
         match self.pop()? {
+            Data::U8(u) => Ok(u as u32),
             Data::U32(u) => Ok(u),
+            data => Err(Error::InvalidType { got: data }),
+        }
+    }
+
+    /// Pops a u8 off the stack
+    fn pop_u8(&mut self) -> Result<u8, Error> {
+        // TODO: wire up required types in the event of an error.
+
+        match self.pop()? {
+            Data::U32(u) => {
+                if u <= u8::MAX as u32 {
+                    Ok(u as u8)
+                } else {
+                    Err(Error::InvalidType { got: Data::U32(u) })
+                }
+            }
+            Data::U8(u) => Ok(u),
             data => Err(Error::InvalidType { got: data }),
         }
     }
@@ -253,6 +325,19 @@ mod tests {
         }
 
         #[test]
+        fn drop_no_stack_returns_err() {
+            assert_eq!(Err(Error::StackUnderflow), machine().execute(Op::Drop));
+        }
+
+        #[test]
+        fn drop() {
+            let mut m = machine();
+            m.push(Data::Bool(true)).unwrap();
+            assert_eq!(Ok(()), m.execute(Op::Drop));
+            assert_eq!(None, m.stack.peek());
+        }
+
+        #[test]
         fn dup_no_stack_returns_err() {
             assert_eq!(Err(Error::StackUnderflow), machine().execute(Op::Dup));
         }
@@ -275,6 +360,19 @@ mod tests {
             let expected_y = m.y;
             assert_eq!(expected_y, m.pop_u32().unwrap());
             assert_eq!(expected_x, m.pop_u32().unwrap());
+        }
+
+        #[test]
+        fn make_color() {
+            let mut m = machine();
+            m.push(Data::U8(1)).unwrap();
+            m.push(Data::U8(2)).unwrap();
+            m.push(Data::U8(3)).unwrap();
+            m.push(Data::U8(4)).unwrap();
+
+            m.execute(Op::MakeColor).unwrap();
+            let expected: Color = (1, 2, 3, 4).into();
+            assert_eq!(expected, m.pop_color().unwrap());
         }
 
         #[test]
@@ -301,6 +399,50 @@ mod tests {
             assert_eq!(true, m.pop_bool().unwrap());
             assert_eq!(false, m.pop_bool().unwrap());
         }
+
+        #[test]
+        fn rot_n() {
+            let mut m = machine();
+            m.push(Data::Bool(true)).unwrap();
+            m.push(Data::U32(123)).unwrap();
+            m.push(Data::Bool(false)).unwrap();
+            m.push(Data::U32(2)).unwrap();
+            m.execute(Op::RotN).unwrap();
+            assert_eq!(true, m.pop_bool().unwrap());
+            assert_eq!(123, m.pop_u32().unwrap());
+            assert_eq!(false, m.pop_bool().unwrap());
+        }
+
+        #[test]
+        fn rot_n_when_n_0() {
+            let mut m = machine();
+            m.push(Data::Bool(true)).unwrap();
+            m.push(Data::U32(123)).unwrap();
+            m.push(Data::Bool(false)).unwrap();
+            m.push(Data::U32(0)).unwrap();
+            m.execute(Op::RotN).unwrap();
+            assert_eq!(false, m.pop_bool().unwrap());
+            assert_eq!(123, m.pop_u32().unwrap());
+            assert_eq!(true, m.pop_bool().unwrap());
+        }
+
+        #[test]
+        fn split_color_underflow() {
+            let mut m = machine();
+
+            assert_eq!(Err(Error::StackUnderflow), m.execute(Op::SplitColor));
+        }
+
+        #[test]
+        fn split_color() {
+            let mut m = machine();
+            m.push(Data::Color((0, 1, 2, 3).into())).unwrap();
+            assert_eq!(Ok(()), m.execute(Op::SplitColor));
+            assert_eq!(3, m.pop_u8().unwrap());
+            assert_eq!(2, m.pop_u8().unwrap());
+            assert_eq!(1, m.pop_u8().unwrap());
+            assert_eq!(0, m.pop_u8().unwrap());
+        }
     }
 
     mod parse {
@@ -316,6 +458,12 @@ mod tests {
         fn bool_false() {
             let token = "false";
             assert_eq!(Ok(Op::Data(Data::Bool(false))), machine().parse(token));
+        }
+
+        #[test]
+        fn drop() {
+            let token = "drop";
+            assert_eq!(Ok(Op::Drop), machine().parse(token));
         }
 
         #[test]
@@ -342,9 +490,21 @@ mod tests {
         }
 
         #[test]
+        fn make_color() {
+            let token = "makeColor";
+            assert_eq!(Ok(Op::MakeColor), machine().parse(token));
+        }
+
+        #[test]
         fn rot() {
             let token = "rot";
             assert_eq!(Ok(Op::Rot), machine().parse(token));
+        }
+
+        #[test]
+        fn rot_n() {
+            let token = "rotN";
+            assert_eq!(Ok(Op::RotN), machine().parse(token));
         }
 
         #[test]
@@ -354,9 +514,21 @@ mod tests {
         }
 
         #[test]
-        fn u32_valid() {
+        fn split_color() {
+            let token = "splitColor";
+            assert_eq!(Ok(Op::SplitColor), machine().parse(token));
+        }
+
+        #[test]
+        fn u8_valid() {
             let token = "0123";
-            assert_eq!(Ok(Op::Data(Data::U32(123))), machine().parse(token));
+            assert_eq!(Ok(Op::Data(Data::U8(123))), machine().parse(token));
+        }
+
+        #[test]
+        fn u32_valid() {
+            let token = "266";
+            assert_eq!(Ok(Op::Data(Data::U32(266))), machine().parse(token));
         }
 
         #[test]
@@ -478,6 +650,13 @@ mod tests {
         }
 
         #[test]
+        fn pop_u32_converts_u8() {
+            let mut m = machine();
+            m.push(Data::U8(3)).unwrap();
+            assert_eq!(Ok(3), m.pop_u32());
+        }
+
+        #[test]
         fn pop_u32_underflow() {
             let mut m = machine();
             assert_eq!(Err(Error::StackUnderflow), m.pop_u32());
@@ -493,6 +672,52 @@ mod tests {
                     got: Data::Bool(true)
                 }),
                 m.pop_u32()
+            );
+        }
+
+        // U8
+        #[test]
+        fn pop_u8() {
+            let mut m = machine();
+            m.push(Data::U8(2)).unwrap();
+            assert_eq!(Ok(2), m.pop_u8());
+        }
+
+        #[test]
+        fn pop_u8_u32_fits() {
+            let mut m = machine();
+            m.push(Data::U32(255)).unwrap();
+            assert_eq!(Ok(255), m.pop_u8());
+        }
+
+        #[test]
+        fn pop_u8_u32_doesnt_fit() {
+            let mut m = machine();
+            m.push(Data::U32(256)).unwrap();
+            assert_eq!(
+                Err(Error::InvalidType {
+                    got: Data::U32(256)
+                }),
+                m.pop_u8()
+            );
+        }
+
+        #[test]
+        fn pop_u8_underflow() {
+            let mut m = machine();
+            assert_eq!(Err(Error::StackUnderflow), m.pop_u8());
+        }
+
+        #[test]
+        fn pop_u8_wrong_type() {
+            let mut m = machine();
+            m.push(Data::Bool(true)).unwrap();
+
+            assert_eq!(
+                Err(Error::InvalidType {
+                    got: Data::Bool(true)
+                }),
+                m.pop_u8()
             );
         }
     }

@@ -1,9 +1,9 @@
 {
-    "width": 1280,
-    "height": 720,
+    "width": 320,
+    "height": 240,
     "output": "output.png",
     "inputs": [
-        "test.jpg",
+        "test1.png",
         "test1.jpg"
     ],
     "program": "test_program.das"

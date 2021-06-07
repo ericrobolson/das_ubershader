@@ -5,6 +5,7 @@ pub enum Data {
     Color(Color),
     String(String),
     U32(u32),
+    U8(u8),
 }
 
 impl Data {
@@ -15,6 +16,7 @@ impl Data {
             Data::Color(_) => Type::Color,
             Data::U32(_) => Type::U32,
             Data::String(_) => Type::String,
+            Data::U8(_) => Type::U8,
         }
     }
 }
@@ -27,6 +29,7 @@ pub enum Type {
     Color,
     String,
     U32,
+    U8,
 }
 
 /// A color.
@@ -43,6 +46,14 @@ impl Into<Color> for (u8, u8, u8) {
         let (r, g, b) = self;
 
         Color { r, g, b, a: 255 }
+    }
+}
+
+impl Into<Color> for (u8, u8, u8, u8) {
+    fn into(self) -> Color {
+        let (r, g, b, a) = self;
+
+        Color { r, g, b, a }
     }
 }
 
@@ -78,6 +89,12 @@ mod tests {
             fn get_type_u32() {
                 let d = Data::U32(22);
                 assert_eq!(Type::U32, d.get_type());
+            }
+
+            #[test]
+            fn get_type_u8() {
+                let d = Data::U8(22);
+                assert_eq!(Type::U8, d.get_type());
             }
         }
     }
