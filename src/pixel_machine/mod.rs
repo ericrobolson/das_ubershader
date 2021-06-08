@@ -334,11 +334,15 @@ impl PixelMachine {
 
         match self.pop()? {
             Data::U32(u) => {
-                if u <= u8::MAX as u32 {
-                    Ok(u as u8)
-                } else {
-                    Err(Error::InvalidType { got: Data::U32(u) })
-                }
+                let u = {
+                    if u <= u8::MAX as u32 {
+                        u as u8
+                    } else {
+                        (u % (u8::MAX as u32)) as u8
+                    }
+                };
+
+                Ok(u)
             }
             Data::U8(u) => Ok(u),
             data => Err(Error::InvalidType { got: data }),
@@ -982,15 +986,10 @@ mod tests {
         }
 
         #[test]
-        fn pop_u8_u32_doesnt_fit() {
+        fn pop_u8_u32_doesnt_fit_modulos() {
             let mut m = machine();
-            m.push(Data::U32(256)).unwrap();
-            assert_eq!(
-                Err(Error::InvalidType {
-                    got: Data::U32(256)
-                }),
-                m.pop_u8()
-            );
+            m.push(Data::U32(258)).unwrap();
+            assert_eq!(Ok(3), m.pop_u8());
         }
 
         #[test]
