@@ -13,6 +13,8 @@ use image::GenericImageView;
 /// Various errors that may occur.
 #[derive(Debug, PartialEq)]
 pub enum Error {
+    /// A number was attempted to be divided by zero.
+    DivideByZero,
     /// An invalid type was provided.
     /// TODO: somehow link to required inputs off of Ops.
     InvalidType { got: Data },
@@ -36,8 +38,33 @@ impl PixelMachine {
     /// TODO: test
     pub fn execute(&mut self, op: Op) -> Result<(), Error> {
         match op {
+            Op::Add => {
+                let a = self.pop_u32()?;
+                let b = self.pop_u32()?;
+                self.push(Data::U32(a.wrapping_add(b)))?;
+                Ok(())
+            }
             Op::Data(data) => {
                 self.push(data)?;
+                Ok(())
+            }
+            Op::Dimensions => {
+                self.push(Data::U32(self.width))?;
+                self.push(Data::U32(self.height))?;
+
+                Ok(())
+            }
+            Op::Divide => {
+                let n = self.pop_u32()?;
+                let divisor = self.pop_u32()?;
+
+                if divisor == 0 {
+                    return Err(Error::DivideByZero);
+                }
+
+                let divided = n / divisor;
+
+                self.push(Data::U32(divided))?;
                 Ok(())
             }
             Op::Drop => {
@@ -55,6 +82,19 @@ impl PixelMachine {
                 self.push(Data::U32(self.y))?;
                 Ok(())
             }
+            Op::Modulo => {
+                let n = self.pop_u32()?;
+                let modulus = self.pop_u32()?;
+
+                if modulus == 0 {
+                    return Err(Error::DivideByZero);
+                }
+
+                let modded = n % modulus;
+
+                self.push(Data::U32(modded))?;
+                Ok(())
+            }
             Op::MakeColor => {
                 let a = self.pop_u8()?;
                 let b = self.pop_u8()?;
@@ -63,6 +103,13 @@ impl PixelMachine {
 
                 let color: Color = (r, g, b, a).into();
                 self.push(Data::Color(color))?;
+                Ok(())
+            }
+            Op::Multiply => {
+                let multiplier = self.pop_u32()?;
+                let n = self.pop_u32()?;
+
+                self.push(Data::U32(n.wrapping_mul(multiplier)))?;
                 Ok(())
             }
             Op::Rot => {
@@ -104,6 +151,12 @@ impl PixelMachine {
                 self.push(Data::U8(color.b))?;
                 self.push(Data::U8(color.a))?;
 
+                Ok(())
+            }
+            Op::Subtract => {
+                let n = self.pop_u32()?;
+                let subtractor = self.pop_u32()?;
+                self.push(Data::U32(n.wrapping_sub(subtractor)))?;
                 Ok(())
             }
             // TODO: test
@@ -194,6 +247,12 @@ impl PixelMachine {
     /// Attempts to parse the given token.
     pub fn parse(&self, token: &str) -> Result<Op, Error> {
         match token {
+            "+" => Ok(Op::Add),
+            "/" => Ok(Op::Divide),
+            "%" => Ok(Op::Modulo),
+            "*" => Ok(Op::Multiply),
+            "-" => Ok(Op::Subtract),
+            "dim" => Ok(Op::Dimensions),
             "drop" => Ok(Op::Drop),
             "dup" => Ok(Op::Dup),
             "fragPos" => Ok(Op::FragPos),
@@ -313,6 +372,49 @@ mod tests {
         use super::*;
 
         #[test]
+        fn add() {
+            let mut m = machine();
+            m.push(Data::U32(2)).unwrap();
+            m.push(Data::U32(2)).unwrap();
+            assert_eq!(Ok(()), m.execute(Op::Add));
+
+            assert_eq!(Ok(4), m.pop_u32());
+        }
+
+        #[test]
+        fn add_wraps() {
+            let mut m = machine();
+            m.push(Data::U32(u32::MAX)).unwrap();
+            m.push(Data::U32(2)).unwrap();
+            assert_eq!(Ok(()), m.execute(Op::Add));
+
+            assert_eq!(Ok(u32::MAX.wrapping_add(2)), m.pop_u32());
+        }
+
+        #[test]
+        fn add_not_numbers() {
+            let mut m = machine();
+            m.push(Data::U32(2)).unwrap();
+            m.push(Data::Bool(true)).unwrap();
+            assert_eq!(
+                Err(Error::InvalidType {
+                    got: Data::Bool(true)
+                }),
+                m.execute(Op::Add)
+            );
+
+            let mut m = machine();
+            m.push(Data::String("garbage".into())).unwrap();
+            m.push(Data::U32(2)).unwrap();
+            assert_eq!(
+                Err(Error::InvalidType {
+                    got: Data::String("garbage".into())
+                }),
+                m.execute(Op::Add)
+            );
+        }
+
+        #[test]
         fn data() {
             let mut m = machine();
             m.push(Data::Bool(true)).unwrap();
@@ -322,6 +424,56 @@ mod tests {
             assert_eq!("testy".to_string(), m.pop_string().unwrap());
             assert_eq!(1, m.pop_u32().unwrap());
             assert_eq!(true, m.pop_bool().unwrap());
+        }
+
+        #[test]
+        fn dimensions() {
+            let mut m = machine();
+            assert_eq!(Ok(()), m.execute(Op::Dimensions));
+
+            assert_eq!(Ok(m.height), m.pop_u32());
+            assert_eq!(Ok(m.width), m.pop_u32());
+        }
+
+        #[test]
+        fn divide() {
+            let mut m = machine();
+            m.push(Data::U32(2)).unwrap();
+            m.push(Data::U32(8)).unwrap();
+            assert_eq!(Ok(()), m.execute(Op::Divide));
+
+            assert_eq!(Ok(4), m.pop_u32());
+        }
+
+        #[test]
+        fn divide_by_zero() {
+            let mut m = machine();
+            m.push(Data::U32(0)).unwrap();
+            m.push(Data::U32(8)).unwrap();
+            assert_eq!(Err(Error::DivideByZero), m.execute(Op::Divide));
+        }
+
+        #[test]
+        fn divide_not_numbers() {
+            let mut m = machine();
+            m.push(Data::U32(2)).unwrap();
+            m.push(Data::Bool(true)).unwrap();
+            assert_eq!(
+                Err(Error::InvalidType {
+                    got: Data::Bool(true)
+                }),
+                m.execute(Op::Divide)
+            );
+
+            let mut m = machine();
+            m.push(Data::String("garbage".into())).unwrap();
+            m.push(Data::U32(2)).unwrap();
+            assert_eq!(
+                Err(Error::InvalidType {
+                    got: Data::String("garbage".into())
+                }),
+                m.execute(Op::Divide)
+            );
         }
 
         #[test]
@@ -373,6 +525,67 @@ mod tests {
             m.execute(Op::MakeColor).unwrap();
             let expected: Color = (1, 2, 3, 4).into();
             assert_eq!(expected, m.pop_color().unwrap());
+        }
+
+        #[test]
+        fn modulo() {
+            let mut m = machine();
+            m.push(Data::U32(2)).unwrap();
+            m.push(Data::U32(7)).unwrap();
+            assert_eq!(Ok(()), m.execute(Op::Modulo));
+
+            assert_eq!(Ok(1), m.pop_u32());
+        }
+
+        #[test]
+        fn modulo_by_zero() {
+            let mut m = machine();
+            m.push(Data::U32(0)).unwrap();
+            m.push(Data::U32(8)).unwrap();
+            assert_eq!(Err(Error::DivideByZero), m.execute(Op::Modulo));
+        }
+
+        #[test]
+        fn modulo_not_numbers() {
+            let mut m = machine();
+            m.push(Data::U32(2)).unwrap();
+            m.push(Data::Bool(true)).unwrap();
+            assert_eq!(
+                Err(Error::InvalidType {
+                    got: Data::Bool(true)
+                }),
+                m.execute(Op::Divide)
+            );
+
+            let mut m = machine();
+            m.push(Data::String("garbage".into())).unwrap();
+            m.push(Data::U32(2)).unwrap();
+            assert_eq!(
+                Err(Error::InvalidType {
+                    got: Data::String("garbage".into())
+                }),
+                m.execute(Op::Modulo)
+            );
+        }
+
+        #[test]
+        fn multiply() {
+            let mut m = machine();
+            m.push(Data::U32(2)).unwrap();
+            m.push(Data::U32(4)).unwrap();
+            assert_eq!(Ok(()), m.execute(Op::Multiply));
+
+            assert_eq!(Ok(8), m.pop_u32());
+        }
+
+        #[test]
+        fn multiply_wraps() {
+            let mut m = machine();
+            m.push(Data::U32(u32::MAX)).unwrap();
+            m.push(Data::U32(3)).unwrap();
+            assert_eq!(Ok(()), m.execute(Op::Multiply));
+
+            assert_eq!(Ok(u32::MAX.wrapping_mul(3)), m.pop_u32());
         }
 
         #[test]
@@ -443,10 +656,58 @@ mod tests {
             assert_eq!(1, m.pop_u8().unwrap());
             assert_eq!(0, m.pop_u8().unwrap());
         }
+
+        #[test]
+        fn subtract() {
+            let mut m = machine();
+            m.push(Data::U32(7)).unwrap();
+            m.push(Data::U32(9)).unwrap();
+            assert_eq!(Ok(()), m.execute(Op::Subtract));
+
+            assert_eq!(Ok(2), m.pop_u32());
+        }
+
+        #[test]
+        fn sub_wraps() {
+            let mut m = machine();
+            m.push(Data::U32(9)).unwrap();
+            m.push(Data::U32(2)).unwrap();
+            assert_eq!(Ok(()), m.execute(Op::Subtract));
+            assert_eq!(Ok((2 as u32).wrapping_sub(9)), m.pop_u32());
+        }
+
+        #[test]
+        fn subtract_not_numbers() {
+            let mut m = machine();
+            m.push(Data::U32(2)).unwrap();
+            m.push(Data::Bool(true)).unwrap();
+            assert_eq!(
+                Err(Error::InvalidType {
+                    got: Data::Bool(true)
+                }),
+                m.execute(Op::Divide)
+            );
+
+            let mut m = machine();
+            m.push(Data::String("garbage".into())).unwrap();
+            m.push(Data::U32(2)).unwrap();
+            assert_eq!(
+                Err(Error::InvalidType {
+                    got: Data::String("garbage".into())
+                }),
+                m.execute(Op::Subtract)
+            );
+        }
     }
 
     mod parse {
         use super::*;
+
+        #[test]
+        fn add() {
+            let token = "+";
+            assert_eq!(Ok(Op::Add), machine().parse(token));
+        }
 
         #[test]
         fn bool_true() {
@@ -458,6 +719,18 @@ mod tests {
         fn bool_false() {
             let token = "false";
             assert_eq!(Ok(Op::Data(Data::Bool(false))), machine().parse(token));
+        }
+
+        #[test]
+        fn dimensions() {
+            let token = "dim";
+            assert_eq!(Ok(Op::Dimensions), machine().parse(token));
+        }
+
+        #[test]
+        fn divide() {
+            let token = "/";
+            assert_eq!(Ok(Op::Divide), machine().parse(token));
         }
 
         #[test]
@@ -496,6 +769,18 @@ mod tests {
         }
 
         #[test]
+        fn modulo() {
+            let token = "%";
+            assert_eq!(Ok(Op::Modulo), machine().parse(token));
+        }
+
+        #[test]
+        fn multiply() {
+            let token = "*";
+            assert_eq!(Ok(Op::Multiply), machine().parse(token));
+        }
+
+        #[test]
         fn rot() {
             let token = "rot";
             assert_eq!(Ok(Op::Rot), machine().parse(token));
@@ -505,6 +790,12 @@ mod tests {
         fn rot_n() {
             let token = "rotN";
             assert_eq!(Ok(Op::RotN), machine().parse(token));
+        }
+
+        #[test]
+        fn subtract() {
+            let token = "-";
+            assert_eq!(Ok(Op::Subtract), machine().parse(token));
         }
 
         #[test]

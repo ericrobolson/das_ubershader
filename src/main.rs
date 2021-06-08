@@ -111,12 +111,11 @@ fn main() -> Result<(), Error> {
     };
 
     // Process pixels
-    let new_pixels: Vec<(u32, u32, Color)> = pixels
+    let new_pixels: Vec<(u32, u32, Result<Color, Error>)> = pixels
         .par_iter()
         .map(|(x, y)| {
-            let color = PixelMachine::new(*x, *y, width, height, textures.clone())
-                .interpret(&program)
-                .unwrap();
+            let color =
+                PixelMachine::new(*x, *y, width, height, textures.clone()).interpret(&program);
 
             (*x, *y, color)
         })
@@ -127,6 +126,14 @@ fn main() -> Result<(), Error> {
         image::ImageBuffer::new(width, height);
 
     for (x, y, color) in new_pixels {
+        let color = match color {
+            Ok(c) => c,
+            Err(e) => {
+                println!("ERROR: {:?}", e);
+                return Err(e);
+            }
+        };
+
         *new_image.get_pixel_mut(x, y) = image::Rgba::<u8>([color.r, color.g, color.b, color.a]);
     }
 
