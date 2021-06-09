@@ -21,9 +21,24 @@ pub enum Op {
     /// Duplicates the top element of the stack.
     /// OP: `dup = [A] -> [A A]`
     Dup,
+    /// Checks whether two things are equal.
+    /// OP: `== = [A A] -> [bool]`
+    Equal,
     /// Puts the given fragment position onto the stack.
     /// OP: `fragPos = [] -> [x:u32 y:u32]
     FragPos,
+    /// Checks whether a is greater than b.
+    /// OP: `> = [a:Number b:Number] -> [bool]`
+    GreaterThan,
+    /// Checks whether a is greater than or equal to b.
+    /// OP: `>= = [a:Number b:Number] -> [bool]`
+    GreaterThanEqual,
+    /// Checks whether a is less than b.
+    /// OP: `< = [a:Number b:Number] -> [bool]`
+    LessThan,
+    /// Checks whether a is less than or equal to b.
+    /// OP: `=< = [a:Number b:Number] -> [bool]`
+    LessThanEqual,
     /// Converts 4 u8's to a color.
     /// OP: `makeColor = [r:u8 g:u8 b:u8 a:u8] -> [color:Color]`
     MakeColor,
@@ -60,7 +75,12 @@ impl Op {
             Op::Divide => todo!(),
             Op::Drop => &[Type::Any],
             Op::Dup => &[Type::Any],
+            Op::Equal => &[Type::Any, Type::Any],
             Op::FragPos => &[],
+            Op::GreaterThan => &[Type::U32, Type::U32],
+            Op::GreaterThanEqual => &[Type::U32, Type::U32],
+            Op::LessThan => &[Type::U32, Type::U32],
+            Op::LessThanEqual => &[Type::U32, Type::U32],
             Op::MakeColor => &[Type::U8, Type::U8, Type::U8, Type::U8],
             Op::Modulo => todo!(),
             Op::Multiply => todo!(),
@@ -102,9 +122,44 @@ mod tests {
         }
 
         #[test]
+        fn eq() {
+            let op = Op::Equal;
+            let expected: &[Type] = &[Type::Any, Type::Any];
+            assert_eq!(expected, op.required_inputs());
+        }
+
+        #[test]
         fn frag_pos() {
             let op = Op::FragPos;
             let expected: &[Type] = &[];
+            assert_eq!(expected, op.required_inputs());
+        }
+
+        #[test]
+        fn greater_than() {
+            let op = Op::GreaterThan;
+            let expected: &[Type] = &[Type::U32, Type::U32];
+            assert_eq!(expected, op.required_inputs());
+        }
+
+        #[test]
+        fn greater_than_equal() {
+            let op = Op::GreaterThanEqual;
+            let expected: &[Type] = &[Type::U32, Type::U32];
+            assert_eq!(expected, op.required_inputs());
+        }
+
+        #[test]
+        fn less_than() {
+            let op = Op::LessThan;
+            let expected: &[Type] = &[Type::U32, Type::U32];
+            assert_eq!(expected, op.required_inputs());
+        }
+
+        #[test]
+        fn less_than_equal() {
+            let op = Op::LessThan;
+            let expected: &[Type] = &[Type::U32, Type::U32];
             assert_eq!(expected, op.required_inputs());
         }
 

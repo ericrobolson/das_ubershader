@@ -77,9 +77,59 @@ impl PixelMachine {
                 self.push(data)?;
                 Ok(())
             }
+            Op::Equal => {
+                let a = self.pop()?;
+                let b = self.pop()?;
+
+                if a == b {
+                    self.push(Data::Bool(true))?;
+                } else {
+                    // If there are two numbers, convert to u32 and try out those
+                    self.push(a)?;
+                    self.push(b)?;
+
+                    let a = self.pop_u32();
+                    let b = self.pop_u32();
+                    if let Ok(a) = a {
+                        if let Ok(b) = b {
+                            if a == b {
+                                self.push(Data::Bool(true))?;
+                                return Ok(());
+                            }
+                        }
+                    }
+
+                    self.push(Data::Bool(false))?;
+                }
+                Ok(())
+            }
             Op::FragPos => {
                 self.push(Data::U32(self.x))?;
                 self.push(Data::U32(self.y))?;
+                Ok(())
+            }
+            Op::GreaterThan => {
+                let a = self.pop_u32()?;
+                let b = self.pop_u32()?;
+                self.push(Data::Bool(b > a))?;
+                Ok(())
+            }
+            Op::GreaterThanEqual => {
+                let a = self.pop_u32()?;
+                let b = self.pop_u32()?;
+                self.push(Data::Bool(b >= a))?;
+                Ok(())
+            }
+            Op::LessThan => {
+                let a = self.pop_u32()?;
+                let b = self.pop_u32()?;
+                self.push(Data::Bool(b < a))?;
+                Ok(())
+            }
+            Op::LessThanEqual => {
+                let a = self.pop_u32()?;
+                let b = self.pop_u32()?;
+                self.push(Data::Bool(b <= a))?;
                 Ok(())
             }
             Op::Modulo => {
@@ -252,6 +302,11 @@ impl PixelMachine {
             "%" => Ok(Op::Modulo),
             "*" => Ok(Op::Multiply),
             "-" => Ok(Op::Subtract),
+            "==" => Ok(Op::Equal),
+            ">" => Ok(Op::GreaterThan),
+            ">=" => Ok(Op::GreaterThanEqual),
+            "<" => Ok(Op::LessThan),
+            "<=" => Ok(Op::LessThanEqual),
             "dim" => Ok(Op::Dimensions),
             "drop" => Ok(Op::Drop),
             "dup" => Ok(Op::Dup),
@@ -509,6 +564,50 @@ mod tests {
         }
 
         #[test]
+        fn eq_true() {
+            let mut m = machine();
+            m.push(Data::Bool(true)).unwrap();
+            m.push(Data::Bool(true)).unwrap();
+            m.execute(Op::Equal).unwrap();
+
+            assert_eq!(true, m.pop_bool().unwrap());
+
+            m.push(Data::U8(18)).unwrap();
+            m.push(Data::U32(18)).unwrap();
+            m.execute(Op::Equal).unwrap();
+
+            assert_eq!(true, m.pop_bool().unwrap());
+
+            m.push(Data::String("wut".into())).unwrap();
+            m.push(Data::String("wut".into())).unwrap();
+            m.execute(Op::Equal).unwrap();
+
+            assert_eq!(true, m.pop_bool().unwrap());
+        }
+
+        #[test]
+        fn eq_false() {
+            let mut m = machine();
+            m.push(Data::Bool(true)).unwrap();
+            m.push(Data::Bool(false)).unwrap();
+            m.execute(Op::Equal).unwrap();
+
+            assert_eq!(false, m.pop_bool().unwrap());
+
+            m.push(Data::U8(12)).unwrap();
+            m.push(Data::U32(18)).unwrap();
+            m.execute(Op::Equal).unwrap();
+
+            assert_eq!(false, m.pop_bool().unwrap());
+
+            m.push(Data::String("wut".into())).unwrap();
+            m.push(Data::String("w2ut".into())).unwrap();
+            m.execute(Op::Equal).unwrap();
+
+            assert_eq!(false, m.pop_bool().unwrap());
+        }
+
+        #[test]
         fn frag_pos() {
             let mut m = machine();
             m.execute(Op::FragPos).unwrap();
@@ -516,6 +615,218 @@ mod tests {
             let expected_y = m.y;
             assert_eq!(expected_y, m.pop_u32().unwrap());
             assert_eq!(expected_x, m.pop_u32().unwrap());
+        }
+
+        #[test]
+        fn greater_than_true() {
+            let mut m = machine();
+            m.push(Data::U8(3)).unwrap();
+            m.push(Data::U32(2)).unwrap();
+            m.execute(Op::GreaterThan).unwrap();
+
+            assert_eq!(true, m.pop_bool().unwrap());
+
+            m.push(Data::U32(18)).unwrap();
+            m.push(Data::U32(1)).unwrap();
+            m.execute(Op::GreaterThan).unwrap();
+
+            assert_eq!(true, m.pop_bool().unwrap());
+
+            m.push(Data::U8(5)).unwrap();
+            m.push(Data::U8(2)).unwrap();
+            m.execute(Op::GreaterThan).unwrap();
+
+            assert_eq!(true, m.pop_bool().unwrap());
+        }
+
+        #[test]
+        fn greater_than_false() {
+            let mut m = machine();
+            m.push(Data::U32(2)).unwrap();
+            m.push(Data::U8(3)).unwrap();
+            m.execute(Op::GreaterThan).unwrap();
+
+            assert_eq!(false, m.pop_bool().unwrap());
+
+            m.push(Data::U32(1)).unwrap();
+            m.push(Data::U32(18)).unwrap();
+            m.execute(Op::GreaterThan).unwrap();
+
+            assert_eq!(false, m.pop_bool().unwrap());
+
+            m.push(Data::U8(2)).unwrap();
+            m.push(Data::U8(5)).unwrap();
+            m.execute(Op::GreaterThan).unwrap();
+
+            assert_eq!(false, m.pop_bool().unwrap());
+        }
+
+        #[test]
+        fn greater_than_equal_true() {
+            let mut m = machine();
+            m.push(Data::U8(3)).unwrap();
+            m.push(Data::U32(2)).unwrap();
+            m.execute(Op::GreaterThanEqual).unwrap();
+
+            assert_eq!(true, m.pop_bool().unwrap());
+
+            m.push(Data::U32(18)).unwrap();
+            m.push(Data::U32(1)).unwrap();
+            m.execute(Op::GreaterThanEqual).unwrap();
+
+            assert_eq!(true, m.pop_bool().unwrap());
+
+            m.push(Data::U8(5)).unwrap();
+            m.push(Data::U8(2)).unwrap();
+            m.execute(Op::GreaterThanEqual).unwrap();
+
+            assert_eq!(true, m.pop_bool().unwrap());
+
+            m.push(Data::U8(3)).unwrap();
+            m.push(Data::U32(3)).unwrap();
+            m.execute(Op::GreaterThanEqual).unwrap();
+
+            assert_eq!(true, m.pop_bool().unwrap());
+
+            m.push(Data::U32(18)).unwrap();
+            m.push(Data::U32(18)).unwrap();
+            m.execute(Op::GreaterThanEqual).unwrap();
+
+            assert_eq!(true, m.pop_bool().unwrap());
+
+            m.push(Data::U8(5)).unwrap();
+            m.push(Data::U8(5)).unwrap();
+            m.execute(Op::GreaterThanEqual).unwrap();
+
+            assert_eq!(true, m.pop_bool().unwrap());
+        }
+
+        #[test]
+        fn greater_than_equal_false() {
+            let mut m = machine();
+            m.push(Data::U32(2)).unwrap();
+            m.push(Data::U8(3)).unwrap();
+            m.execute(Op::GreaterThanEqual).unwrap();
+
+            assert_eq!(false, m.pop_bool().unwrap());
+
+            m.push(Data::U32(1)).unwrap();
+            m.push(Data::U32(18)).unwrap();
+            m.execute(Op::GreaterThanEqual).unwrap();
+
+            assert_eq!(false, m.pop_bool().unwrap());
+
+            m.push(Data::U8(2)).unwrap();
+            m.push(Data::U8(5)).unwrap();
+            m.execute(Op::GreaterThanEqual).unwrap();
+
+            assert_eq!(false, m.pop_bool().unwrap());
+        }
+
+        #[test]
+        fn less_than_true() {
+            let mut m = machine();
+            m.push(Data::U32(2)).unwrap();
+            m.push(Data::U8(3)).unwrap();
+            m.execute(Op::LessThan).unwrap();
+
+            assert_eq!(true, m.pop_bool().unwrap());
+
+            m.push(Data::U32(1)).unwrap();
+            m.push(Data::U32(18)).unwrap();
+            m.execute(Op::LessThan).unwrap();
+
+            assert_eq!(true, m.pop_bool().unwrap());
+
+            m.push(Data::U8(2)).unwrap();
+            m.push(Data::U8(5)).unwrap();
+            m.execute(Op::LessThan).unwrap();
+
+            assert_eq!(true, m.pop_bool().unwrap());
+        }
+
+        #[test]
+        fn less_than_false() {
+            let mut m = machine();
+            m.push(Data::U8(3)).unwrap();
+            m.push(Data::U32(2)).unwrap();
+            m.execute(Op::LessThan).unwrap();
+
+            assert_eq!(false, m.pop_bool().unwrap());
+
+            m.push(Data::U32(18)).unwrap();
+            m.push(Data::U32(1)).unwrap();
+            m.execute(Op::LessThan).unwrap();
+
+            assert_eq!(false, m.pop_bool().unwrap());
+
+            m.push(Data::U8(5)).unwrap();
+            m.push(Data::U8(2)).unwrap();
+            m.execute(Op::LessThan).unwrap();
+
+            assert_eq!(false, m.pop_bool().unwrap());
+        }
+
+        #[test]
+        fn less_than_equal_true() {
+            let mut m = machine();
+            m.push(Data::U32(2)).unwrap();
+            m.push(Data::U8(3)).unwrap();
+            m.execute(Op::LessThanEqual).unwrap();
+
+            assert_eq!(true, m.pop_bool().unwrap());
+
+            m.push(Data::U32(1)).unwrap();
+            m.push(Data::U32(18)).unwrap();
+            m.execute(Op::LessThanEqual).unwrap();
+
+            assert_eq!(true, m.pop_bool().unwrap());
+
+            m.push(Data::U8(2)).unwrap();
+            m.push(Data::U8(5)).unwrap();
+            m.execute(Op::LessThanEqual).unwrap();
+
+            assert_eq!(true, m.pop_bool().unwrap());
+
+            m.push(Data::U8(3)).unwrap();
+            m.push(Data::U32(3)).unwrap();
+            m.execute(Op::LessThanEqual).unwrap();
+
+            assert_eq!(true, m.pop_bool().unwrap());
+
+            m.push(Data::U32(18)).unwrap();
+            m.push(Data::U32(18)).unwrap();
+            m.execute(Op::LessThanEqual).unwrap();
+
+            assert_eq!(true, m.pop_bool().unwrap());
+
+            m.push(Data::U8(5)).unwrap();
+            m.push(Data::U8(5)).unwrap();
+            m.execute(Op::LessThanEqual).unwrap();
+
+            assert_eq!(true, m.pop_bool().unwrap());
+        }
+
+        #[test]
+        fn less_than_equal_false() {
+            let mut m = machine();
+            m.push(Data::U8(3)).unwrap();
+            m.push(Data::U32(2)).unwrap();
+            m.execute(Op::LessThanEqual).unwrap();
+
+            assert_eq!(false, m.pop_bool().unwrap());
+
+            m.push(Data::U32(18)).unwrap();
+            m.push(Data::U32(1)).unwrap();
+            m.execute(Op::LessThanEqual).unwrap();
+
+            assert_eq!(false, m.pop_bool().unwrap());
+
+            m.push(Data::U8(5)).unwrap();
+            m.push(Data::U8(2)).unwrap();
+            m.execute(Op::LessThanEqual).unwrap();
+
+            assert_eq!(false, m.pop_bool().unwrap());
         }
 
         #[test]
@@ -750,6 +1061,12 @@ mod tests {
         }
 
         #[test]
+        fn eq() {
+            let token = "==";
+            assert_eq!(Ok(Op::Equal), machine().parse(token));
+        }
+
+        #[test]
         fn frag_pos() {
             let token = "fragPos";
             assert_eq!(Ok(Op::FragPos), machine().parse(token));
@@ -764,6 +1081,30 @@ mod tests {
                 }),
                 machine().parse(token)
             );
+        }
+
+        #[test]
+        fn greater_than() {
+            let token = ">";
+            assert_eq!(Ok(Op::GreaterThan), machine().parse(token));
+        }
+
+        #[test]
+        fn greater_than_equal() {
+            let token = ">=";
+            assert_eq!(Ok(Op::GreaterThanEqual), machine().parse(token));
+        }
+
+        #[test]
+        fn less_than() {
+            let token = "<";
+            assert_eq!(Ok(Op::LessThan), machine().parse(token));
+        }
+
+        #[test]
+        fn less_than_equal() {
+            let token = "<=";
+            assert_eq!(Ok(Op::LessThanEqual), machine().parse(token));
         }
 
         #[test]
