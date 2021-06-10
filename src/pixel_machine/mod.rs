@@ -17,7 +17,12 @@ pub enum Error {
     DivideByZero,
     /// An invalid type was provided.
     /// TODO: somehow link to required inputs off of Ops.
-    InvalidType { got: Data },
+    InvalidType {
+        /// The data that was popped off the stack
+        got: Data,
+        /// The instruction that this occurred on
+        instruction_pointer: usize,
+    },
     /// The stack was empty and a value was attempted to be popped off.
     /// TODO: somehow link to required inputs off of Ops.
     StackUnderflow,
@@ -26,7 +31,10 @@ pub enum Error {
 }
 
 /// A virtual machine that operates on a pixel.
+#[derive(Debug, Clone, PartialEq)]
 pub struct PixelMachine {
+    instruction_pointer: usize,
+    instructions: Vec<Op>,
     stack: Stack<Data>,
     textures: Vec<Texture>,
     width: u32,
@@ -67,6 +75,10 @@ impl PixelMachine {
                 self.push(Data::U32(divided))?;
                 Ok(())
             }
+            Op::Do => {
+                // TODO: should this do anything?
+                Ok(())
+            }
             Op::Drop => {
                 self.pop()?;
                 Ok(())
@@ -103,6 +115,10 @@ impl PixelMachine {
                 }
                 Ok(())
             }
+            Op::End => {
+                // This doesn't really do anything as it's mainly a label
+                Ok(())
+            }
             Op::FragPos => {
                 self.push(Data::U32(self.x))?;
                 self.push(Data::U32(self.y))?;
@@ -119,6 +135,46 @@ impl PixelMachine {
                 let b = self.pop_u32()?;
                 self.push(Data::Bool(b >= a))?;
                 Ok(())
+            }
+            Op::If => {
+                // Execute conditional
+                let mut found_do = false;
+                while self.peek_next().is_some() {
+                    self.execute_next()?;
+
+                    if let Some(Op::Do) = self.peek_next() {
+                        found_do = true;
+                        break;
+                    }
+                }
+
+                if !found_do {
+                    todo!("Handle 'do' not found!");
+                }
+
+                let should_execute = self.pop_bool()?;
+
+                // Execute do or skip to end
+                loop {
+                    match self.peek_next() {
+                        Some(op) => {
+                            if op == &Op::End {
+                                return Ok(());
+                            }
+                            // Otherwise keep executing
+                        }
+                        None => {
+                            todo!("Required an `execute` op!");
+                        }
+                    };
+
+                    if should_execute == true {
+                        self.execute_next()?;
+                    } else {
+                        // Skip to next
+                        self.instruction_pointer += 1;
+                    }
+                }
             }
             Op::LessThan => {
                 let a = self.pop_u32()?;
@@ -222,6 +278,18 @@ impl PixelMachine {
         }
     }
 
+    /// Executes the next instruction
+    fn execute_next(&mut self) -> Result<(), Error> {
+        if self.instruction_pointer < self.instructions.len() {
+            let op = self.instructions[self.instruction_pointer].clone();
+            self.instruction_pointer = self.instruction_pointer.wrapping_add(1);
+
+            self.execute(op)
+        } else {
+            Ok(())
+        }
+    }
+
     /// TODO: test
     fn get_color(&self, texture_id: u32, x: u32, y: u32) -> Color {
         if self.textures.is_empty() {
@@ -271,9 +339,18 @@ impl PixelMachine {
             s
         };
 
-        // Interpret the program
+        // Parse the program
         for token in program.split_whitespace() {
             let op = self.parse(token)?;
+            self.instructions.push(op.clone());
+        }
+
+        println!("{:?}", self.instructions);
+
+        // Interpret
+        while self.instruction_pointer < self.instructions.len() {
+            let op = self.instructions[self.instruction_pointer].clone();
+            self.instruction_pointer = self.instruction_pointer.wrapping_add(1);
             self.execute(op)?;
         }
 
@@ -285,6 +362,8 @@ impl PixelMachine {
     pub fn new(x: u32, y: u32, width: u32, height: u32, textures: Vec<Texture>) -> Self {
         let stack = Stack::new();
         Self {
+            instruction_pointer: 0,
+            instructions: vec![],
             stack,
             textures,
             width,
@@ -308,9 +387,12 @@ impl PixelMachine {
             "<" => Ok(Op::LessThan),
             "<=" => Ok(Op::LessThanEqual),
             "dim" => Ok(Op::Dimensions),
+            "do" => Ok(Op::Do),
             "drop" => Ok(Op::Drop),
             "dup" => Ok(Op::Dup),
+            "end" => Ok(Op::End),
             "fragPos" => Ok(Op::FragPos),
+            "if" => Ok(Op::If),
             "makeColor" => Ok(Op::MakeColor),
             "rot" => Ok(Op::Rot),
             "rotN" => Ok(Op::RotN),
@@ -332,6 +414,15 @@ impl PixelMachine {
         }
     }
 
+    /// Peeks the next instruction
+    fn peek_next(&self) -> Option<&Op> {
+        if self.instruction_pointer < self.instructions.len() {
+            Some(&self.instructions[self.instruction_pointer])
+        } else {
+            None
+        }
+    }
+
     /// Pops a value off the stack.
     fn pop(&mut self) -> Result<Data, Error> {
         // TODO: wire up required types in the event of an error.
@@ -348,7 +439,14 @@ impl PixelMachine {
 
         match self.pop()? {
             Data::Bool(value) => Ok(value),
-            data => Err(Error::InvalidType { got: data }),
+            data => Err(self.invalid_type(data)),
+        }
+    }
+
+    fn invalid_type(&self, data: Data) -> Error {
+        Error::InvalidType {
+            got: data,
+            instruction_pointer: self.instruction_pointer,
         }
     }
 
@@ -358,7 +456,7 @@ impl PixelMachine {
 
         match self.pop()? {
             Data::Color(value) => Ok(value),
-            data => Err(Error::InvalidType { got: data }),
+            data => Err(self.invalid_type(data)),
         }
     }
 
@@ -368,7 +466,7 @@ impl PixelMachine {
 
         match self.pop()? {
             Data::String(value) => Ok(value),
-            data => Err(Error::InvalidType { got: data }),
+            data => Err(self.invalid_type(data)),
         }
     }
 
@@ -379,7 +477,7 @@ impl PixelMachine {
         match self.pop()? {
             Data::U8(u) => Ok(u as u32),
             Data::U32(u) => Ok(u),
-            data => Err(Error::InvalidType { got: data }),
+            data => Err(self.invalid_type(data)),
         }
     }
 
@@ -400,7 +498,7 @@ impl PixelMachine {
                 Ok(u)
             }
             Data::U8(u) => Ok(u),
-            data => Err(Error::InvalidType { got: data }),
+            data => Err(self.invalid_type(data)),
         }
     }
 
@@ -425,6 +523,16 @@ mod tests {
             H,
             vec![std::sync::Arc::new(image::DynamicImage::new_rgba8(W, H))],
         )
+    }
+
+    #[test]
+    fn peek_next() {
+        todo!("do tests!");
+    }
+
+    #[test]
+    fn execute_next() {
+        todo!("do tests!");
     }
 
     mod execute {
@@ -457,7 +565,8 @@ mod tests {
             m.push(Data::Bool(true)).unwrap();
             assert_eq!(
                 Err(Error::InvalidType {
-                    got: Data::Bool(true)
+                    got: Data::Bool(true),
+                    instruction_pointer: 0
                 }),
                 m.execute(Op::Add)
             );
@@ -467,7 +576,8 @@ mod tests {
             m.push(Data::U32(2)).unwrap();
             assert_eq!(
                 Err(Error::InvalidType {
-                    got: Data::String("garbage".into())
+                    got: Data::String("garbage".into()),
+                    instruction_pointer: 0
                 }),
                 m.execute(Op::Add)
             );
@@ -519,7 +629,8 @@ mod tests {
             m.push(Data::Bool(true)).unwrap();
             assert_eq!(
                 Err(Error::InvalidType {
-                    got: Data::Bool(true)
+                    got: Data::Bool(true),
+                    instruction_pointer: 0
                 }),
                 m.execute(Op::Divide)
             );
@@ -529,7 +640,8 @@ mod tests {
             m.push(Data::U32(2)).unwrap();
             assert_eq!(
                 Err(Error::InvalidType {
-                    got: Data::String("garbage".into())
+                    got: Data::String("garbage".into()),
+                    instruction_pointer: 0
                 }),
                 m.execute(Op::Divide)
             );
@@ -561,6 +673,13 @@ mod tests {
 
             assert_eq!(true, m.pop_bool().unwrap());
             assert_eq!(true, m.pop_bool().unwrap());
+        }
+
+        #[test]
+        fn end_does_nothing() {
+            let mut m = machine();
+            m.execute(Op::End).unwrap();
+            assert_eq!(machine(), m);
         }
 
         #[test]
@@ -722,6 +841,58 @@ mod tests {
 
             assert_eq!(false, m.pop_bool().unwrap());
         }
+        #[test]
+        fn if_has_end_executes_block() {
+            let mut m = machine();
+
+            let result = m.interpret(
+                "
+            6 6 6 6 makeColor 
+            if 1 1 == do
+                4 3 2 1 makeColor
+            end 
+            ",
+            );
+
+            assert_eq!(
+                Ok(Color {
+                    r: 4,
+                    g: 3,
+                    b: 2,
+                    a: 1
+                }),
+                result
+            );
+        }
+
+        #[test]
+        fn if_has_end_skips_block() {
+            let mut m = machine();
+
+            let result = m.interpret(
+                "
+            6 6 6 6 makeColor 
+            if 1 2 == do
+                4 3 2 1 makeColor
+            end 
+            ",
+            );
+
+            assert_eq!(
+                Ok(Color {
+                    r: 6,
+                    g: 6,
+                    b: 6,
+                    a: 6
+                }),
+                result
+            );
+        }
+
+        #[test]
+        fn if_no_end() {
+            todo!()
+        }
 
         #[test]
         fn less_than_true() {
@@ -867,7 +1038,8 @@ mod tests {
             m.push(Data::Bool(true)).unwrap();
             assert_eq!(
                 Err(Error::InvalidType {
-                    got: Data::Bool(true)
+                    got: Data::Bool(true),
+                    instruction_pointer: 0
                 }),
                 m.execute(Op::Divide)
             );
@@ -877,7 +1049,8 @@ mod tests {
             m.push(Data::U32(2)).unwrap();
             assert_eq!(
                 Err(Error::InvalidType {
-                    got: Data::String("garbage".into())
+                    got: Data::String("garbage".into()),
+                    instruction_pointer: 0
                 }),
                 m.execute(Op::Modulo)
             );
@@ -998,7 +1171,8 @@ mod tests {
             m.push(Data::Bool(true)).unwrap();
             assert_eq!(
                 Err(Error::InvalidType {
-                    got: Data::Bool(true)
+                    got: Data::Bool(true),
+                    instruction_pointer: 0
                 }),
                 m.execute(Op::Divide)
             );
@@ -1008,7 +1182,8 @@ mod tests {
             m.push(Data::U32(2)).unwrap();
             assert_eq!(
                 Err(Error::InvalidType {
-                    got: Data::String("garbage".into())
+                    got: Data::String("garbage".into()),
+                    instruction_pointer: 0
                 }),
                 m.execute(Op::Subtract)
             );
@@ -1049,6 +1224,12 @@ mod tests {
         }
 
         #[test]
+        fn do_() {
+            let token = "do";
+            assert_eq!(Ok(Op::Do), machine().parse(token));
+        }
+
+        #[test]
         fn drop() {
             let token = "drop";
             assert_eq!(Ok(Op::Drop), machine().parse(token));
@@ -1058,6 +1239,12 @@ mod tests {
         fn dup() {
             let token = "dup";
             assert_eq!(Ok(Op::Dup), machine().parse(token));
+        }
+
+        #[test]
+        fn end() {
+            let token = "end";
+            assert_eq!(Ok(Op::End), machine().parse(token));
         }
 
         #[test]
@@ -1093,6 +1280,12 @@ mod tests {
         fn greater_than_equal() {
             let token = ">=";
             assert_eq!(Ok(Op::GreaterThanEqual), machine().parse(token));
+        }
+
+        #[test]
+        fn if_() {
+            let token = "if";
+            assert_eq!(Ok(Op::If), machine().parse(token));
         }
 
         #[test]
@@ -1218,7 +1411,8 @@ mod tests {
 
             assert_eq!(
                 Err(Error::InvalidType {
-                    got: Data::Color((0, 0, 0).into())
+                    got: Data::Color((0, 0, 0).into()),
+                    instruction_pointer: 0
                 }),
                 m.pop_bool()
             );
@@ -1245,7 +1439,8 @@ mod tests {
 
             assert_eq!(
                 Err(Error::InvalidType {
-                    got: Data::Bool(true)
+                    got: Data::Bool(true),
+                    instruction_pointer: 0
                 }),
                 m.pop_color()
             );
@@ -1272,7 +1467,8 @@ mod tests {
 
             assert_eq!(
                 Err(Error::InvalidType {
-                    got: Data::Bool(true)
+                    got: Data::Bool(true),
+                    instruction_pointer: 0
                 }),
                 m.pop_string()
             );
@@ -1305,7 +1501,8 @@ mod tests {
 
             assert_eq!(
                 Err(Error::InvalidType {
-                    got: Data::Bool(true)
+                    got: Data::Bool(true),
+                    instruction_pointer: 0
                 }),
                 m.pop_u32()
             );
@@ -1346,7 +1543,8 @@ mod tests {
 
             assert_eq!(
                 Err(Error::InvalidType {
-                    got: Data::Bool(true)
+                    got: Data::Bool(true),
+                    instruction_pointer: 0
                 }),
                 m.pop_u8()
             );

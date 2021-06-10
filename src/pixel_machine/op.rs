@@ -15,12 +15,18 @@ pub enum Op {
     /// Divides a number by a second number.
     /// OP: `/ = [divisor:Number n:Number] -> [Number]`
     Divide,
+    /// Signals a bool for an if statement
+    /// OP: `do = [] -> []`
+    Do,
     /// Drops an item off the stack.
     /// OP: `drop = [A] -> []`
     Drop,
     /// Duplicates the top element of the stack.
     /// OP: `dup = [A] -> [A A]`
     Dup,
+    /// A end label for a conditional.
+    /// OP: `end = [] -> []`
+    End,
     /// Checks whether two things are equal.
     /// OP: `== = [A A] -> [bool]`
     Equal,
@@ -33,6 +39,10 @@ pub enum Op {
     /// Checks whether a is greater than or equal to b.
     /// OP: `>= = [a:Number b:Number] -> [bool]`
     GreaterThanEqual,
+    /// If the top of the stack is true, execute the proceeding block.
+    /// Otherwise skip to the `end` op.
+    /// OP: `if = [cond:bool] -> []`
+    If,
     /// Checks whether a is less than b.
     /// OP: `< = [a:Number b:Number] -> [bool]`
     LessThan,
@@ -73,12 +83,15 @@ impl Op {
             Op::Data(_) => &[],
             Op::Dimensions => todo!(),
             Op::Divide => todo!(),
+            Op::Do => todo!(),
             Op::Drop => &[Type::Any],
             Op::Dup => &[Type::Any],
+            Op::End => todo!(),
             Op::Equal => &[Type::Any, Type::Any],
             Op::FragPos => &[],
             Op::GreaterThan => &[Type::U32, Type::U32],
             Op::GreaterThanEqual => &[Type::U32, Type::U32],
+            Op::If => &[Type::Bool],
             Op::LessThan => &[Type::U32, Type::U32],
             Op::LessThanEqual => &[Type::U32, Type::U32],
             Op::MakeColor => &[Type::U8, Type::U8, Type::U8, Type::U8],
@@ -146,6 +159,13 @@ mod tests {
         fn greater_than_equal() {
             let op = Op::GreaterThanEqual;
             let expected: &[Type] = &[Type::U32, Type::U32];
+            assert_eq!(expected, op.required_inputs());
+        }
+
+        #[test]
+        fn if_() {
+            let op = Op::If;
+            let expected: &[Type] = &[Type::Bool];
             assert_eq!(expected, op.required_inputs());
         }
 
