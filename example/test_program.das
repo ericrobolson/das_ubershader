@@ -1,6 +1,7 @@
 # Push two colors
 fragPos 0 texturePixel splitColor
 fragPos 1 texturePixel splitColor
+
 # drop all but red
 drop drop drop
 # rotate to replace texture 0's blue
@@ -15,5 +16,6 @@ rot drop rot drop
 
 3 rotN
 drop
+
 
 makeColor

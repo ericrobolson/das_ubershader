@@ -345,8 +345,6 @@ impl PixelMachine {
             self.instructions.push(op.clone());
         }
 
-        println!("{:?}", self.instructions);
-
         // Interpret
         while self.instruction_pointer < self.instructions.len() {
             let op = self.instructions[self.instruction_pointer].clone();
