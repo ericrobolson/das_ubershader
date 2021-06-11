@@ -1,0 +1,7 @@
+{
+    "width": 320,
+    "height": 240,
+    "output": "output.png",
+    "inputs": [],
+    "program": "test_program.das"
+}

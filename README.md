@@ -2,20 +2,10 @@
 * Create and execute image processing operations.
 * Stack based interpreter.
 
-## What does this solve?
-* TODO: Fill in before shipping
-
-## Why use it?
-* TODO: Fill in before shipping
-
 # Usage:
-* TODO: Fill in before shipping
-
-# Tech choices:
-* TODO: Fill in before shipping
-
-# Architecture:
-* TODO: Fill in before shipping
+* Create a new `cfg.json` which will specify the output, the dimensions, the inputs and the program to execute
+* Add in your images/program
+* Execute with `cargo run example/cfg.json`
 
 # Coding standards:
 * Alphabetize all things

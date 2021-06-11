@@ -6,6 +6,9 @@ pub enum Op {
     /// Adds two values on the stack.
     /// OP: `+ = [a:Number b:Number] -> [Number]`
     Add,
+    /// Takes two bools and executes an `&&`.
+    /// OP: `&& = [a:bool b:bool] -> [bool]`
+    And,
     /// Push some form of data onto the stack
     /// OP: `[] -> [A]
     Data(Data),
@@ -80,6 +83,7 @@ impl Op {
     pub fn required_inputs(&self) -> &[Type] {
         match self {
             Op::Add => todo!(),
+            Op::And => &[Type::Bool, Type::Bool],
             Op::Data(_) => &[],
             Op::Dimensions => todo!(),
             Op::Divide => todo!(),
@@ -112,6 +116,13 @@ mod tests {
 
     mod required_inputs {
         use super::*;
+
+        #[test]
+        fn and() {
+            let op = Op::And;
+            let expected: &[Type] = &[Type::Bool, Type::Bool];
+            assert_eq!(expected, op.required_inputs());
+        }
 
         #[test]
         fn data() {

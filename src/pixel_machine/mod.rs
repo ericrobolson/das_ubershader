@@ -52,6 +52,12 @@ impl PixelMachine {
                 self.push(Data::U32(a.wrapping_add(b)))?;
                 Ok(())
             }
+            Op::And => {
+                let a = self.pop_bool()?;
+                let b = self.pop_bool()?;
+                self.push(Data::Bool(a && b))?;
+                Ok(())
+            }
             Op::Data(data) => {
                 self.push(data)?;
                 Ok(())
@@ -375,26 +381,27 @@ impl PixelMachine {
     pub fn parse(&self, token: &str) -> Result<Op, Error> {
         match token {
             "+" => Ok(Op::Add),
-            "/" => Ok(Op::Divide),
-            "%" => Ok(Op::Modulo),
-            "*" => Ok(Op::Multiply),
-            "-" => Ok(Op::Subtract),
-            "==" => Ok(Op::Equal),
-            ">" => Ok(Op::GreaterThan),
-            ">=" => Ok(Op::GreaterThanEqual),
-            "<" => Ok(Op::LessThan),
-            "<=" => Ok(Op::LessThanEqual),
+            "&&" => Ok(Op::And),
             "dim" => Ok(Op::Dimensions),
+            "/" => Ok(Op::Divide),
             "do" => Ok(Op::Do),
             "drop" => Ok(Op::Drop),
             "dup" => Ok(Op::Dup),
             "end" => Ok(Op::End),
+            "==" => Ok(Op::Equal),
             "fragPos" => Ok(Op::FragPos),
+            ">" => Ok(Op::GreaterThan),
+            ">=" => Ok(Op::GreaterThanEqual),
             "if" => Ok(Op::If),
+            "<" => Ok(Op::LessThan),
+            "<=" => Ok(Op::LessThanEqual),
             "makeColor" => Ok(Op::MakeColor),
+            "%" => Ok(Op::Modulo),
+            "*" => Ok(Op::Multiply),
             "rot" => Ok(Op::Rot),
             "rotN" => Ok(Op::RotN),
             "splitColor" => Ok(Op::SplitColor),
+            "-" => Ok(Op::Subtract),
             "texturePixel" => Ok(Op::TexturePixel),
             _ => {
                 if let Ok(u) = token.parse::<u8>() {
@@ -578,6 +585,56 @@ mod tests {
                     instruction_pointer: 0
                 }),
                 m.execute(Op::Add)
+            );
+        }
+
+        #[test]
+        fn and_returns_true() {
+            let mut m = machine();
+            m.push(Data::Bool(true)).unwrap();
+            m.push(Data::Bool(true)).unwrap();
+            assert_eq!(Ok(()), m.execute(Op::And));
+
+            assert_eq!(Ok(true), m.pop_bool());
+        }
+
+        #[test]
+        fn and_returns_false() {
+            let mut m = machine();
+            m.push(Data::Bool(true)).unwrap();
+            m.push(Data::Bool(false)).unwrap();
+            assert_eq!(Ok(()), m.execute(Op::And));
+
+            assert_eq!(Ok(false), m.pop_bool());
+
+            m.push(Data::Bool(false)).unwrap();
+            m.push(Data::Bool(true)).unwrap();
+            assert_eq!(Ok(()), m.execute(Op::And));
+
+            assert_eq!(Ok(false), m.pop_bool());
+        }
+
+        #[test]
+        fn and_invalid_types() {
+            let mut m = machine();
+            m.push(Data::Bool(true)).unwrap();
+            m.push(Data::U8(0)).unwrap();
+            assert_eq!(
+                Err(Error::InvalidType {
+                    instruction_pointer: 0,
+                    got: Data::U8(0)
+                }),
+                m.execute(Op::And)
+            );
+
+            m.push(Data::U8(0)).unwrap();
+            m.push(Data::Bool(true)).unwrap();
+            assert_eq!(
+                Err(Error::InvalidType {
+                    instruction_pointer: 0,
+                    got: Data::U8(0)
+                }),
+                m.execute(Op::And)
             );
         }
 
@@ -1195,6 +1252,12 @@ mod tests {
         fn add() {
             let token = "+";
             assert_eq!(Ok(Op::Add), machine().parse(token));
+        }
+
+        #[test]
+        fn and() {
+            let token = "&&";
+            assert_eq!(Ok(Op::And), machine().parse(token));
         }
 
         #[test]
